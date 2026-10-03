@@ -20,3 +20,7 @@ APIFY_DEFAULT_DATASET_ID=local-dataset APIFY_LOCAL_STORAGE_DIR=./storage npm sta
 ```
 
 Provide input through Apify local storage or the Apify Console. The default crawl is limited to five pages and runs at 1 request per second; set `rateLimit` to `2` for 2 requests per second. `npm start` starts crawling; `npm run check` does not.
+
+## Run diagnostics
+
+The Actor log reports page title, anchor count, discovered `/videos/` link count, HTTP errors, age-verification prompts, login or signup walls, session or cookie problems, navigation failures, and extraction failures. It does not log passwords, cookies, or full page text.

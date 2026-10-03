@@ -181,11 +181,15 @@ async function extractRecord(page, url, timeout, networkUrls) {
 
 async function addNetworkCapture(page) {
     const networkUrls = new Set();
+    const httpErrors = [];
     const capture = (request) => networkUrls.add(request.url());
-    const captureResponse = (response) => networkUrls.add(response.url());
+    const captureResponse = (response) => {
+        networkUrls.add(response.url());
+        if (response.status() >= 400) httpErrors.push({ url: response.url(), status: response.status() });
+    };
     page.on('request', capture);
     page.on('response', captureResponse);
-    return { networkUrls, dispose: () => { page.off('request', capture); page.off('response', captureResponse); } };
+    return { networkUrls, httpErrors, dispose: () => { page.off('request', capture); page.off('response', captureResponse); } };
 }
 
 /*
@@ -248,7 +252,35 @@ async function extractRecordLegacy(page, url, timeout) {
 }
 
 async function saveFailure(url, status, error) {
+    Actor.log.warning(`[${status}] ${url}: ${String(error?.message || error).split('\n')[0]}`);
     await Actor.pushData({ status, url, error: String(error?.message || error), extractedAt: new Date().toISOString() });
+}
+
+async function logPageDiagnostics(page, url, phase, capture) {
+    const diagnostics = await page.evaluate(() => {
+        const text = document.body?.innerText || '';
+        const lowerText = text.toLowerCase();
+        return {
+            title: document.title || null,
+            anchors: document.querySelectorAll('a[href]').length,
+            videoLinks: [...document.querySelectorAll('a[href]')]
+                .filter((anchor) => new URL(anchor.href, location.href).pathname.startsWith('/videos/')).length,
+            ageVerification: /age verification|are you 18|older than 18|over 18|confirm your age/i.test(text),
+            loginWall: /log in|login|sign in|signin|sign up|signup|create account|register/i.test(lowerText),
+            sessionIssue: /session expired|session lost|enable cookies|cookies required|verification required/i.test(lowerText),
+        };
+    }).catch((error) => ({ diagnosticError: error.message }));
+    const httpErrors = capture.httpErrors.slice(-10);
+    const issueLabels = [];
+    if (diagnostics.ageVerification) issueLabels.push('age-verification');
+    if (diagnostics.loginWall) issueLabels.push('login-or-signup-wall');
+    if (diagnostics.sessionIssue) issueLabels.push('session-or-cookie-issue');
+    if (httpErrors.length) issueLabels.push('http-errors');
+    const message = `[${phase}] ${url} title=${JSON.stringify(diagnostics.title)} anchors=${diagnostics.anchors ?? 'unknown'} videoLinks=${diagnostics.videoLinks ?? 'unknown'} issues=${issueLabels.join(',') || 'none'}`;
+    if (issueLabels.length) Actor.log.warning(message, { httpErrors });
+    else Actor.log.info(message);
+    if (diagnostics.diagnosticError) Actor.log.warning(`[${phase}] page diagnostics failed for ${url}: ${diagnostics.diagnosticError}`);
+    return diagnostics;
 }
 
 async function navigatePage(page, url, timeout) {
@@ -307,7 +339,9 @@ async function main() {
                 }
             }
             if (!loaded) throw lastError;
+            const startDiagnostics = await logPageDiagnostics(page, input.startUrl, 'start-page', startCapture);
             const ageStatus = await detectAndHandleAgeVerification(page);
+            if (startDiagnostics.ageVerification) Actor.log.info(`[age-verification] detected on start page; action=${ageStatus}`);
             if (ageStatus === 'blocked') {
                 startBlocked = true;
                 await saveFailure(input.startUrl, 'blocked', new Error('Age verification requires an unavailable continuation control.'));
@@ -349,7 +383,9 @@ async function main() {
                     try {
                         await beforeRequest(workerPage);
                         await navigatePage(workerPage, url, input.timeout);
+                        const detailDiagnostics = await logPageDiagnostics(workerPage, url, 'detail-page', workerCapture);
                         const ageStatus = await detectAndHandleAgeVerification(workerPage);
+                        if (detailDiagnostics.ageVerification) Actor.log.info(`[age-verification] detected on detail page; url=${url} action=${ageStatus}`);
                         if (ageStatus === 'blocked') {
                             const blockedError = new Error('Age verification requires an unavailable continuation control.');
                             blockedError.status = 'blocked';
