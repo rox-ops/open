@@ -43,8 +43,16 @@ function normaliseInput(input = {}) {
 }
 
 function isLikelyVideoUrl(url) {
-    const pathname = new URL(url).pathname.toLowerCase();
-    return /\.(html?|php|asp|aspx)$/.test(pathname) || pathname.includes('/video') || pathname.includes('/watch');
+    return new URL(url).pathname.toLowerCase().startsWith('/videos/');
+}
+
+function sameOriginVideoUrl(href, startUrl) {
+    try {
+        const url = new URL(href, startUrl);
+        return url.origin === new URL(startUrl).origin && isLikelyVideoUrl(url.href) ? url.href : null;
+    } catch {
+        return null;
+    }
 }
 
 function isExcludedMediaUrl(url) {
@@ -62,6 +70,21 @@ function extractUrl(value) {
 
 function chooseMediaUrl(urls, extensionPattern) {
     return [...urls].find((url) => extensionPattern.test(url) && !isExcludedMediaUrl(url)) || null;
+}
+
+function collectMediaUrls(value, urls = new Set(), depth = 0) {
+    if (depth > 6 || urls.size >= 200) return urls;
+    if (typeof value === 'string') {
+        const url = extractUrl(value);
+        if (url && /\.(?:mp4|m3u8)(?:[?#]|$)/i.test(url)) urls.add(url);
+        return urls;
+    }
+    if (Array.isArray(value)) {
+        for (const item of value) collectMediaUrls(item, urls, depth + 1);
+    } else if (value && typeof value === 'object') {
+        for (const item of Object.values(value)) collectMediaUrls(item, urls, depth + 1);
+    }
+    return urls;
 }
 
 async function detectAndHandleAgeVerification(page) {
@@ -86,7 +109,90 @@ async function detectAndHandleAgeVerification(page) {
     return 'blocked';
 }
 
-async function extractRecord(page, url, timeout) {
+async function extractRecord(page, url, timeout, networkUrls) {
+    const pageData = await page.evaluate(() => {
+        const stateMediaUrls = new Set();
+        const collectStateMedia = (value, depth = 0) => {
+            if (depth > 6 || stateMediaUrls.size >= 200) return;
+            if (typeof value === 'string') {
+                for (const match of value.matchAll(/https?:[^"'\s]+\.(?:mp4|m3u8)(?:[?#][^"'\s]*)?/gi)) stateMediaUrls.add(match[0]);
+                return;
+            }
+            if (Array.isArray(value)) {
+                for (const item of value) collectStateMedia(item, depth + 1);
+            } else if (value && typeof value === 'object') {
+                for (const item of Object.values(value)) collectStateMedia(item, depth + 1);
+            }
+        };
+        for (const name of ['initials', 'initialState', 'videoModel']) {
+            if (globalThis[name]) collectStateMedia(globalThis[name]);
+        }
+        for (const script of document.querySelectorAll('script')) {
+            const text = script.textContent?.trim();
+            if (!text || text.length > 1_000_000) continue;
+            try {
+                collectStateMedia(JSON.parse(text));
+            } catch {
+                collectStateMedia(text);
+            }
+        }
+        const jsonLd = [...document.querySelectorAll('script[type="application/ld+json"]')]
+            .flatMap((node) => { try { return [JSON.parse(node.textContent)]; } catch { return []; } });
+        const readText = (selector) => document.querySelector(selector)?.innerText?.trim() || null;
+        const readAttribute = (selector, attribute) => document.querySelector(selector)?.getAttribute(attribute) || null;
+        const media = [...document.querySelectorAll('video, video source, source')]
+            .map((node) => node.currentSrc || node.src || node.getAttribute('src'))
+            .filter(Boolean);
+        return {
+            title: readText('h1.video-title') || readText('.video-header h1') || readText('h1')
+                || readAttribute('meta[property="og:title"]', 'content') || document.title || null,
+            description: readAttribute('meta[name="description"]', 'content')
+                || readText('.video-description') || readText('.description-text') || null,
+            thumbnail: readAttribute('meta[property="og:image"]', 'content')
+                || readAttribute('meta[name="twitter:image"]', 'content')
+                || readAttribute('link[rel="image_src"]', 'href') || null,
+            media,
+            stateMediaUrls: [...stateMediaUrls],
+            jsonLd,
+        };
+    });
+
+    const stateMediaUrls = pageData.stateMediaUrls;
+    const jsonLdMediaUrls = collectMediaUrls(pageData.jsonLd);
+    const allCandidateUrls = [
+        ...pageData.media,
+        ...networkUrls,
+        ...stateMediaUrls,
+        ...jsonLdMediaUrls,
+    ].map(extractUrl).filter(Boolean);
+
+    return {
+        status: 'succeeded',
+        url,
+        title: pageData.title,
+        description: pageData.description,
+        thumbnail: extractUrl(pageData.thumbnail),
+        mp4Url: chooseMediaUrl(allCandidateUrls, /\.mp4(?:$|[?#])/i),
+        hlsUrl: chooseMediaUrl(allCandidateUrls, /\.m3u8(?:$|[?#])/i),
+        extractedAt: new Date().toISOString(),
+        timeout,
+    };
+}
+
+async function addNetworkCapture(page) {
+    const networkUrls = new Set();
+    const capture = (request) => networkUrls.add(request.url());
+    const captureResponse = (response) => networkUrls.add(response.url());
+    page.on('request', capture);
+    page.on('response', captureResponse);
+    return { networkUrls, dispose: () => { page.off('request', capture); page.off('response', captureResponse); } };
+}
+
+/*
+ * Kept below only as a compatibility marker for older generated builds.
+ * The active extraction path is extractRecord above.
+ */
+async function extractRecordLegacy(page, url, timeout) {
     const inlineState = await page.evaluate(() => {
         const state = {};
         for (const script of document.querySelectorAll('script:not([src])')) {
@@ -165,6 +271,7 @@ async function main() {
         browser = await chromium.launch({ headless: true, proxy: proxyUrl ? { server: proxyUrl } : undefined });
         const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
         const page = await context.newPage();
+        const startCapture = await addNetworkCapture(page);
         page.setDefaultTimeout(input.timeout);
         page.setDefaultNavigationTimeout(input.timeout);
         const deadline = Date.now() + input.totalRuntime;
@@ -181,7 +288,7 @@ async function main() {
             requestGate = turn.catch(() => {});
             await turn;
         };
-        const discoveredUrls = new Set([input.startUrl]);
+        const discoveredUrls = new Set();
         let startBlocked = false;
         let startFailed = false;
 
@@ -207,17 +314,22 @@ async function main() {
                 const links = await page.locator('a[href]').evaluateAll((anchors) => anchors.map((anchor) => anchor.href));
                 for (const link of links) {
                     if (discoveredUrls.size >= input.maxItems) break;
-                    if (isLikelyVideoUrl(link) && new URL(link).origin === new URL(input.startUrl).origin) discoveredUrls.add(link);
+                    const detailUrl = sameOriginVideoUrl(link, input.startUrl);
+                    if (detailUrl) discoveredUrls.add(detailUrl);
                 }
             }
         } catch (error) {
             startFailed = true;
             await saveFailure(input.startUrl, error.status || 'failed', error);
         } finally {
+            startCapture.dispose();
             await page.close().catch(() => {});
         }
 
         const urls = startBlocked || startFailed ? [] : [...discoveredUrls].slice(0, input.maxItems);
+        if (urls.length === 0 && !startBlocked && !startFailed) {
+            await saveFailure(input.startUrl, 'no_video_pages', new Error('No /videos/ detail pages were discovered from the start URL.'));
+        }
         let nextIndex = 0;
         const worker = async () => {
             while (!abortController.signal.aborted && Date.now() < deadline) {
@@ -228,6 +340,7 @@ async function main() {
                 for (let attempt = 0; attempt <= MAX_RETRIES && !completed; attempt += 1) {
                     if (attempt > 0) await sleep(Math.min(input.timeout, 1_000 * 2 ** attempt));
                     const workerPage = await context.newPage();
+                    const workerCapture = await addNetworkCapture(workerPage);
                     workerPage.setDefaultTimeout(input.timeout);
                     workerPage.setDefaultNavigationTimeout(input.timeout);
                     try {
@@ -239,13 +352,14 @@ async function main() {
                             blockedError.status = 'blocked';
                             throw blockedError;
                         }
-                        await Actor.pushData(await extractRecord(workerPage, url, input.timeout));
+                        await Actor.pushData(await extractRecord(workerPage, url, input.timeout, workerCapture.networkUrls));
                         completed = true;
                     } catch (error) {
                         if (error.status === 'blocked' || attempt === MAX_RETRIES) {
                             await saveFailure(url, error.status || 'failed', error);
                         }
                     } finally {
+                        workerCapture.dispose();
                         await workerPage.close().catch(() => {});
                     }
                 }
