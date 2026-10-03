@@ -5,14 +5,19 @@ import { open, unlink } from 'node:fs/promises';
 const DEFAULT_MAX_ITEMS = 5;
 const DEFAULT_CONCURRENCY = 1;
 const DEFAULT_TIMEOUT_MS = 30_000;
-const DEFAULT_RATE_LIMIT_MS = 3_000;
+const DEFAULT_REQUESTS_PER_SECOND = 1;
 const DEFAULT_TOTAL_RUNTIME_MS = 10 * 60 * 1_000;
 const MAX_ITEMS_LIMIT = 100;
 const MAX_CONCURRENCY_LIMIT = 4;
 const MAX_TIMEOUT_MS = 120_000;
-const MAX_RATE_LIMIT_MS = 60_000;
 const MAX_RUNTIME_MS = 30 * 60 * 1_000;
 const MAX_RETRIES = 2;
+const USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+];
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -22,13 +27,17 @@ function boundedInteger(value, fallback, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, Math.floor(number)));
 }
 
+function nextUserAgent() {
+    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
 function normaliseInput(input = {}) {
     return {
         startUrl: String(input.startUrl || 'https://example.com/'),
         maxItems: boundedInteger(input.maxItems, DEFAULT_MAX_ITEMS, 1, MAX_ITEMS_LIMIT),
         concurrency: boundedInteger(input.concurrency, DEFAULT_CONCURRENCY, 1, MAX_CONCURRENCY_LIMIT),
         timeout: boundedInteger(input.timeout, DEFAULT_TIMEOUT_MS, 1_000, MAX_TIMEOUT_MS),
-        rateLimit: boundedInteger(input.rateLimit, DEFAULT_RATE_LIMIT_MS, 0, MAX_RATE_LIMIT_MS),
+        rateLimit: boundedInteger(input.rateLimit, DEFAULT_REQUESTS_PER_SECOND, 1, 2),
         totalRuntime: boundedInteger(input.totalRuntime, DEFAULT_TOTAL_RUNTIME_MS, 30_000, MAX_RUNTIME_MS),
     };
 }
@@ -154,10 +163,24 @@ async function main() {
         page.setDefaultTimeout(input.timeout);
         page.setDefaultNavigationTimeout(input.timeout);
         const deadline = Date.now() + input.totalRuntime;
+        const requestInterval = 1_000 / input.rateLimit;
+        let nextRequestAt = 0;
+        let requestGate = Promise.resolve();
+        const beforeRequest = async (requestPage) => {
+            const turn = requestGate.then(async () => {
+                const wait = Math.max(0, nextRequestAt - Date.now());
+                if (wait > 0) await sleep(wait);
+                nextRequestAt = Date.now() + requestInterval;
+                await requestPage.setExtraHTTPHeaders({ 'User-Agent': nextUserAgent() });
+            });
+            requestGate = turn.catch(() => {});
+            await turn;
+        };
         const discoveredUrls = new Set([input.startUrl]);
         let startBlocked = false;
 
         try {
+            await beforeRequest(page);
             await page.goto(input.startUrl, { waitUntil: 'domcontentloaded', timeout: input.timeout });
             const ageStatus = await detectAndHandleAgeVerification(page);
             if (ageStatus === 'blocked') {
@@ -188,6 +211,7 @@ async function main() {
                     workerPage.setDefaultTimeout(input.timeout);
                     workerPage.setDefaultNavigationTimeout(input.timeout);
                     try {
+                        await beforeRequest(workerPage);
                         await workerPage.goto(url, { waitUntil: 'domcontentloaded', timeout: input.timeout });
                         const ageStatus = await detectAndHandleAgeVerification(workerPage);
                         if (ageStatus === 'blocked') {
@@ -205,7 +229,6 @@ async function main() {
                         await workerPage.close().catch(() => {});
                     }
                 }
-                if (input.rateLimit > 0 && index < urls.length - 1) await sleep(input.rateLimit);
             }
         };
         await Promise.all(Array.from({ length: Math.min(input.concurrency, urls.length) }, worker));
