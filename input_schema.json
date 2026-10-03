@@ -1,0 +1,14 @@
+{
+  "title": "Video metadata crawler input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "startUrl": { "title": "Start URL", "type": "string", "editor": "textfield", "default": "https://example.com/", "description": "The page where video links are discovered." },
+    "maxItems": { "title": "Maximum items", "type": "integer", "minimum": 1, "maximum": 100, "default": 5 },
+    "concurrency": { "title": "Concurrency", "type": "integer", "minimum": 1, "maximum": 4, "default": 1 },
+    "timeout": { "title": "Timeout (ms)", "type": "integer", "minimum": 1000, "maximum": 120000, "default": 30000 },
+    "rateLimit": { "title": "Delay between requests (ms)", "type": "integer", "minimum": 0, "maximum": 60000, "default": 3000 },
+    "totalRuntime": { "title": "Total runtime (ms)", "type": "integer", "minimum": 30000, "maximum": 1800000, "default": 600000 }
+  },
+  "required": ["startUrl"]
+}

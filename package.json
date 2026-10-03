@@ -1,0 +1,14 @@
+{
+  "name": "apify-video-metadata-actor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/main.js",
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "apify": "^3.4.0",
+    "playwright": "^1.55.0"
+  }
+}
