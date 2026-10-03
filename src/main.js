@@ -145,6 +145,11 @@ async function saveFailure(url, status, error) {
     await Actor.pushData({ status, url, error: String(error?.message || error), extractedAt: new Date().toISOString() });
 }
 
+async function navigatePage(page, url, timeout) {
+    await page.goto(url, { waitUntil: 'commit', timeout });
+    await page.waitForLoadState('domcontentloaded', { timeout: Math.min(timeout, 10_000) }).catch(() => {});
+}
+
 async function main() {
     const input = normaliseInput(await Actor.getInput());
     const abortController = new AbortController();
@@ -187,7 +192,7 @@ async function main() {
                 if (attempt > 0) await sleep(Math.min(input.timeout, 1_000 * 2 ** attempt));
                 try {
                     await beforeRequest(page);
-                    await page.goto(input.startUrl, { waitUntil: 'domcontentloaded', timeout: input.timeout });
+                    await navigatePage(page, input.startUrl, input.timeout);
                     loaded = true;
                 } catch (error) {
                     lastError = error;
@@ -227,7 +232,7 @@ async function main() {
                     workerPage.setDefaultNavigationTimeout(input.timeout);
                     try {
                         await beforeRequest(workerPage);
-                        await workerPage.goto(url, { waitUntil: 'domcontentloaded', timeout: input.timeout });
+                        await navigatePage(workerPage, url, input.timeout);
                         const ageStatus = await detectAndHandleAgeVerification(workerPage);
                         if (ageStatus === 'blocked') {
                             const blockedError = new Error('Age verification requires an unavailable continuation control.');
