@@ -87,6 +87,15 @@ function collectMediaUrls(value, urls = new Set(), depth = 0) {
     return urls;
 }
 
+function toPlaywrightProxy(proxyUrl) {
+    if (!proxyUrl) return undefined;
+    const parsed = new URL(proxyUrl);
+    const proxy = { server: `${parsed.protocol}//${parsed.host}` };
+    if (parsed.username) proxy.username = decodeURIComponent(parsed.username);
+    if (parsed.password) proxy.password = decodeURIComponent(parsed.password);
+    return proxy;
+}
+
 async function detectAndHandleAgeVerification(page) {
     const bodyText = await page.locator('body').innerText({ timeout: 5_000 }).catch(() => '');
     if (!/age verification|are you 18|older than 18|over 18|confirm your age/i.test(bodyText)) return 'none';
@@ -300,7 +309,7 @@ async function main() {
     try {
         const proxyConfiguration = await Actor.createProxyConfiguration();
         const proxyUrl = proxyConfiguration ? await proxyConfiguration.newUrl() : undefined;
-        browser = await chromium.launch({ headless: true, proxy: proxyUrl ? { server: proxyUrl } : undefined });
+        browser = await chromium.launch({ headless: true, proxy: toPlaywrightProxy(proxyUrl) });
         const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
         const page = await context.newPage();
         const startCapture = await addNetworkCapture(page);
