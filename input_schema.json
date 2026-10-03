@@ -4,11 +4,11 @@
   "schemaVersion": 1,
   "properties": {
     "startUrl": { "title": "Start URL", "type": "string", "editor": "textfield", "default": "https://example.com/", "description": "The page where video links are discovered." },
-    "maxItems": { "title": "Maximum items", "type": "integer", "minimum": 1, "maximum": 100, "default": 5 },
-    "concurrency": { "title": "Concurrency", "type": "integer", "minimum": 1, "maximum": 4, "default": 1 },
-    "timeout": { "title": "Timeout (ms)", "type": "integer", "minimum": 1000, "maximum": 120000, "default": 30000 },
+    "maxItems": { "title": "Maximum items", "type": "integer", "minimum": 1, "maximum": 100, "default": 5, "description": "Maximum number of video pages to process." },
+    "concurrency": { "title": "Concurrency", "type": "integer", "minimum": 1, "maximum": 4, "default": 1, "description": "Number of pages processed in parallel." },
+    "timeout": { "title": "Timeout (ms)", "type": "integer", "minimum": 1000, "maximum": 120000, "default": 30000, "description": "Navigation and page operation timeout in milliseconds." },
     "rateLimit": { "title": "Requests per second", "type": "integer", "minimum": 1, "maximum": 2, "default": 1, "description": "Global request rate. Allowed values are 1 or 2 requests per second." },
-    "totalRuntime": { "title": "Total runtime (ms)", "type": "integer", "minimum": 30000, "maximum": 1800000, "default": 600000 }
+    "totalRuntime": { "title": "Total runtime (ms)", "type": "integer", "minimum": 30000, "maximum": 1800000, "default": 600000, "description": "Maximum total crawl runtime in milliseconds." }
   },
   "required": ["startUrl"]
 }
