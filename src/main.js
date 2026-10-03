@@ -1,4 +1,4 @@
-import { Actor } from 'apify';
+import { Actor, log } from 'apify';
 import { chromium } from 'playwright';
 import { open, unlink } from 'node:fs/promises';
 
@@ -252,7 +252,7 @@ async function extractRecordLegacy(page, url, timeout) {
 }
 
 async function saveFailure(url, status, error) {
-    Actor.log.warning(`[${status}] ${url}: ${String(error?.message || error).split('\n')[0]}`);
+    log.warning(`[${status}] ${url}: ${String(error?.message || error).split('\n')[0]}`);
     await Actor.pushData({ status, url, error: String(error?.message || error), extractedAt: new Date().toISOString() });
 }
 
@@ -277,9 +277,9 @@ async function logPageDiagnostics(page, url, phase, capture) {
     if (diagnostics.sessionIssue) issueLabels.push('session-or-cookie-issue');
     if (httpErrors.length) issueLabels.push('http-errors');
     const message = `[${phase}] ${url} title=${JSON.stringify(diagnostics.title)} anchors=${diagnostics.anchors ?? 'unknown'} videoLinks=${diagnostics.videoLinks ?? 'unknown'} issues=${issueLabels.join(',') || 'none'}`;
-    if (issueLabels.length) Actor.log.warning(message, { httpErrors });
-    else Actor.log.info(message);
-    if (diagnostics.diagnosticError) Actor.log.warning(`[${phase}] page diagnostics failed for ${url}: ${diagnostics.diagnosticError}`);
+    if (issueLabels.length) log.warning(message, { httpErrors });
+    else log.info(message);
+    if (diagnostics.diagnosticError) log.warning(`[${phase}] page diagnostics failed for ${url}: ${diagnostics.diagnosticError}`);
     return diagnostics;
 }
 
@@ -341,7 +341,7 @@ async function main() {
             if (!loaded) throw lastError;
             const startDiagnostics = await logPageDiagnostics(page, input.startUrl, 'start-page', startCapture);
             const ageStatus = await detectAndHandleAgeVerification(page);
-            if (startDiagnostics.ageVerification) Actor.log.info(`[age-verification] detected on start page; action=${ageStatus}`);
+            if (startDiagnostics.ageVerification) log.info(`[age-verification] detected on start page; action=${ageStatus}`);
             if (ageStatus === 'blocked') {
                 startBlocked = true;
                 await saveFailure(input.startUrl, 'blocked', new Error('Age verification requires an unavailable continuation control.'));
@@ -385,7 +385,7 @@ async function main() {
                         await navigatePage(workerPage, url, input.timeout);
                         const detailDiagnostics = await logPageDiagnostics(workerPage, url, 'detail-page', workerCapture);
                         const ageStatus = await detectAndHandleAgeVerification(workerPage);
-                        if (detailDiagnostics.ageVerification) Actor.log.info(`[age-verification] detected on detail page; url=${url} action=${ageStatus}`);
+                        if (detailDiagnostics.ageVerification) log.info(`[age-verification] detected on detail page; url=${url} action=${ageStatus}`);
                         if (ageStatus === 'blocked') {
                             const blockedError = new Error('Age verification requires an unavailable continuation control.');
                             blockedError.status = 'blocked';
