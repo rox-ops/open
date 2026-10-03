@@ -33,7 +33,7 @@ function nextUserAgent() {
 
 function normaliseInput(input = {}) {
     return {
-        startUrl: String(input.startUrl || 'https://example.com/'),
+        startUrl: String(input.startUrl || 'https://xhamster19.com/search/hot+milf'),
         maxItems: boundedInteger(input.maxItems, DEFAULT_MAX_ITEMS, 1, MAX_ITEMS_LIMIT),
         concurrency: boundedInteger(input.concurrency, DEFAULT_CONCURRENCY, 1, MAX_CONCURRENCY_LIMIT),
         timeout: boundedInteger(input.timeout, DEFAULT_TIMEOUT_MS, 1_000, MAX_TIMEOUT_MS),
@@ -291,6 +291,7 @@ async function main() {
         const discoveredUrls = new Set();
         let startBlocked = false;
         let startFailed = false;
+        let anchorCount = 0;
 
         try {
             let loaded = false;
@@ -311,7 +312,9 @@ async function main() {
                 startBlocked = true;
                 await saveFailure(input.startUrl, 'blocked', new Error('Age verification requires an unavailable continuation control.'));
             } else {
+                await page.waitForSelector('a[href*="/videos/"]', { state: 'attached', timeout: Math.min(input.timeout, 15_000) }).catch(() => {});
                 const links = await page.locator('a[href]').evaluateAll((anchors) => anchors.map((anchor) => anchor.href));
+                anchorCount = links.length;
                 for (const link of links) {
                     if (discoveredUrls.size >= input.maxItems) break;
                     const detailUrl = sameOriginVideoUrl(link, input.startUrl);
@@ -328,7 +331,7 @@ async function main() {
 
         const urls = startBlocked || startFailed ? [] : [...discoveredUrls].slice(0, input.maxItems);
         if (urls.length === 0 && !startBlocked && !startFailed) {
-            await saveFailure(input.startUrl, 'no_video_pages', new Error('No /videos/ detail pages were discovered from the start URL.'));
+            await saveFailure(input.startUrl, 'no_video_pages', new Error(`No /videos/ detail pages were discovered from the start URL; found ${anchorCount} anchors.`));
         }
         let nextIndex = 0;
         const worker = async () => {
