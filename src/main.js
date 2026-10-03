@@ -178,10 +178,22 @@ async function main() {
         };
         const discoveredUrls = new Set([input.startUrl]);
         let startBlocked = false;
+        let startFailed = false;
 
         try {
-            await beforeRequest(page);
-            await page.goto(input.startUrl, { waitUntil: 'domcontentloaded', timeout: input.timeout });
+            let loaded = false;
+            let lastError;
+            for (let attempt = 0; attempt <= MAX_RETRIES && !loaded; attempt += 1) {
+                if (attempt > 0) await sleep(Math.min(input.timeout, 1_000 * 2 ** attempt));
+                try {
+                    await beforeRequest(page);
+                    await page.goto(input.startUrl, { waitUntil: 'domcontentloaded', timeout: input.timeout });
+                    loaded = true;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+            if (!loaded) throw lastError;
             const ageStatus = await detectAndHandleAgeVerification(page);
             if (ageStatus === 'blocked') {
                 startBlocked = true;
@@ -193,11 +205,14 @@ async function main() {
                     if (isLikelyVideoUrl(link) && new URL(link).origin === new URL(input.startUrl).origin) discoveredUrls.add(link);
                 }
             }
+        } catch (error) {
+            startFailed = true;
+            await saveFailure(input.startUrl, error.status || 'failed', error);
         } finally {
             await page.close().catch(() => {});
         }
 
-        const urls = startBlocked ? [] : [...discoveredUrls].slice(0, input.maxItems);
+        const urls = startBlocked || startFailed ? [] : [...discoveredUrls].slice(0, input.maxItems);
         let nextIndex = 0;
         const worker = async () => {
             while (!abortController.signal.aborted && Date.now() < deadline) {
