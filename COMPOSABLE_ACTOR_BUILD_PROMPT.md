@@ -1,6 +1,10 @@
 # Composable Apify Actor Build Prompt
 
-यह prompt इस तरह बनाया गया है कि आप बाद में अपना custom process अलग से जोड़ सकें। पहले मुख्य prompt paste करें, फिर नीचे दिया गया process block उसी chat में अलग user message के रूप में paste करें।
+यह prompt इस तरह बनाया गया है कि user main prompt के बाद अपना पूरा custom
+process और अपने CSS selectors खुद लिख सके। नीचे का append area उसी user के
+लिए है: वहाँ दिए गए sample को बदलकर या हटाकर अपना वास्तविक process/selectors
+लिखें। Actor को user द्वारा जोड़ी गई जानकारी को implementation में इस्तेमाल
+करना होगा।
 
 ## 1. Main build prompt
 
@@ -119,18 +123,38 @@ Before crawling, run a JavaScript syntax check and JSON/schema validation.
 Use explicit error handling, preserve type safety, follow existing project
 conventions where applicable, and make precise changes only.
 
-When this prompt is complete, do not start coding until all later optional
-process instructions have been read. Later process instructions may add
-domain-specific workflow details, but they must not weaken, remove, or
-contradict the safety, lifecycle, rate-limit, validation, and persistence
-requirements above. If a later instruction conflicts with this prompt, keep
-this prompt's requirements and clearly report the conflict before coding.
+Before coding, read the user customization blocks at the end of this prompt.
+They may add domain-specific workflow details and selectors, but they must not
+weaken, remove, or contradict the safety, lifecycle, rate-limit, validation,
+and persistence requirements above. If a customization conflicts with this
+prompt, keep this prompt's requirements and clearly report the conflict before
+coding.
+
+## User-provided additions
+
+The user will append their own process and selectors in the two sections below.
+The text inside these sections is user-owned input, not a fixed example. The
+coding agent must use the user's actual text as implementation requirements.
+If a section is empty, keep the main prompt's default behavior.
+
+### User's custom process
+
+[WRITE OR PASTE YOUR COMPLETE CUSTOM ACTOR PROCESS HERE]
+
+### User's custom CSS selectors
+
+[WRITE OR PASTE YOUR CSS SELECTORS HERE]
+
+Before implementation, summarize the final combined process and selector
+priority. Ask only about genuinely invalid or conflicting requirements; do not
+invent values for empty placeholders.
 ```
 
-## 2. Optional process block to paste later
+## 2. How the user adds their own process
 
-इस block को आप अपनी जरूरत के अनुसार बदल सकते हैं। इसे main prompt के बाद
-अलग user message के रूप में paste करें।
+Main prompt के अंत में **User's custom process** section में अपना process
+लिखें। नीचे केवल structure समझाने के लिए है; इसे अपनी वास्तविक जानकारी से
+replace करें।
 
 ```text
 ## Additional actor process
@@ -173,17 +197,82 @@ immediate Dataset writes, and validation requirements. If any placeholder is
 left unchanged, ignore it rather than inventing behavior.
 ```
 
-## 3. How to combine them safely
+## 3. How the user adds their own selectors
 
-1. Coding agent को पूरा **Main build prompt** भेजें।
-2. उसके बाद **Optional process block** की copy भेजें।
-3. Bracket वाले placeholders को अपने वास्तविक process से बदलें।
-4. Agent से पहले implementation checklist और conflicts की सूची दिखाने को कहें।
-5. Checklist में कोई conflict न हो तो ही coding शुरू करवाएँ।
-6. अगर process में कोई नई requirement हो, तो उसे “Additional actor process”
-   के अंतर्गत रखें; main prompt के मूल sections को delete न करें।
+Main prompt के अंत में **User's custom CSS selectors** section में अपने
+selectors लिखें। नीचे केवल structure समझाने के लिए है; इसे अपनी वास्तविक
+selectors से replace करें।
+नए selectors पहले आज़माए जाएँगे और main prompt वाले selectors fallback के रूप
+में रहेंगे।
 
-## 4. Example custom process
+```text
+## Additional selectors
+
+Apply these selectors in addition to the main build prompt. Do not remove the
+main prompt's fallback selectors or extraction sources.
+
+### Page selectors
+
+- Title selectors, in priority order:
+  - [CSS selector 1]
+  - [CSS selector 2]
+- Description selectors, in priority order:
+  - [CSS selector 1]
+  - [CSS selector 2]
+- Thumbnail selectors, in priority order:
+  - [CSS selector 1]
+  - [CSS selector 2]
+
+### Media selectors
+
+- Video/source selectors:
+  - [CSS selector 1]
+  - [CSS selector 2]
+- Attribute names containing media URLs:
+  - [src, data-src, data-video, data-hls]
+
+### Additional output fields
+
+- Field name: [for example, author]
+  - Selector: [CSS selector]
+  - Attribute or text rule: [textContent, href, src, or attribute name]
+
+### Selector rules
+
+1. Try these additional selectors before the main prompt's fallback selectors.
+2. Ignore selectors that return no element; do not treat that alone as an
+   extraction failure.
+3. Trim extracted text and discard empty values.
+4. Resolve relative URLs against the current page URL.
+5. Apply the main prompt's media filtering, deduplication, access-control,
+   error-handling, timeout, rate-limit, retry, and persistence rules.
+6. Do not use selectors to bypass login, age verification, CAPTCHA, paywalls,
+   DRM, or any other access control.
+7. If a selector is invalid or ambiguous, report it before coding instead of
+   silently inventing a replacement.
+
+Before implementing, convert these selectors into a selector-priority
+checklist and show the final output field mapping.
+```
+
+## 4. How to use the prompt
+
+1. Main prompt को copy करें।
+2. Main prompt के बाद अपना पूरा process खुद लिखें।
+3. उसके बाद अपने CSS selectors खुद लिखें।
+4. इन additions को उसी एक user message के अंत में रखें; वे sample text नहीं,
+   बल्कि वास्तविक implementation instructions हैं।
+5. अगर custom process या selectors नहीं हैं, तो संबंधित section खाली छोड़ें।
+6. Agent से implementation से पहले combined process, selector priority और
+   conflicts की सूची दिखाने को कहें।
+7. Conflict न हो तो ही coding शुरू करवाएँ।
+8. Main prompt के मूल safety, access-control, retry, timeout, rate-limit,
+   persistence और validation requirements delete न करें।
+
+अगर कोई selector block नहीं दिया गया हो, तो main prompt के built-in selectors
+ही इस्तेमाल किए जाएँ।
+
+## 5. Example custom process
 
 नीचे केवल format का उदाहरण है:
 
@@ -224,7 +313,7 @@ global rate limit, bounded retries, total-runtime deadline, cleanup rules,
 immediate Dataset writes, and validation requirements.
 ```
 
-## 5. Recommended commands
+## 6. Recommended commands
 
 ```sh
 npm install
@@ -232,4 +321,3 @@ npm run check
 node -e "JSON.parse(require('fs').readFileSync('input_schema.json', 'utf8')); console.log('schema valid')"
 APIFY_DEFAULT_DATASET_ID=local-dataset APIFY_LOCAL_STORAGE_DIR=./storage npm start
 ```
-
