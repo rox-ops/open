@@ -21,7 +21,7 @@ Requirements:
 - Use bounded retries only. Never use an infinite browser relaunch loop.
 - Set navigation, page, and total-runtime timeouts.
 - Limit the default crawl to 5 video pages.
-- Interpret rateLimit as 1 or 2 requests per second and enforce it globally.
+- Interpret rateLimit as 1 to 5 requests per second and enforce it globally.
 - Change the User-Agent before every navigation.
 - Save every successful record immediately to the Apify Dataset.
 - Handle a search/listing start page by collecting only same-origin links whose pathname starts with /videos/.
@@ -89,7 +89,7 @@ Requirements:
   "maxItems": 5,
   "concurrency": 1,
   "timeout": 60000,
-  "rateLimit": 1,
+  "rateLimit": 5,
   "totalRuntime": 600000
 }
 ```
@@ -102,7 +102,7 @@ Input fields:
 | `maxItems` | `5` | अधिकतम detail pages |
 | `concurrency` | `1` | एक समय में चलने वाले detail pages |
 | `timeout` | `30000` | Navigation/page timeout, milliseconds में |
-| `rateLimit` | `1` | Global rate: केवल `1` या `2` requests per second |
+| `rateLimit` | `5` | Global rate: `1` से `5` requests per second |
 | `totalRuntime` | `600000` | कुल runtime limit, milliseconds में |
 
 `startUrl` को Input tab के Start URL box में डालना होता है। Input में दिया हुआ URL code के default URL को override करता है।

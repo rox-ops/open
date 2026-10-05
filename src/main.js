@@ -5,7 +5,8 @@ import { open, unlink } from 'node:fs/promises';
 const DEFAULT_MAX_ITEMS = 5;
 const DEFAULT_CONCURRENCY = 1;
 const DEFAULT_TIMEOUT_MS = 30_000;
-const DEFAULT_REQUESTS_PER_SECOND = 1;
+const DEFAULT_REQUESTS_PER_SECOND = 5;
+const MAX_REQUESTS_PER_SECOND = 5;
 const DEFAULT_TOTAL_RUNTIME_MS = 10 * 60 * 1_000;
 const MAX_ITEMS_LIMIT = 100;
 const MAX_CONCURRENCY_LIMIT = 4;
@@ -37,7 +38,7 @@ function normaliseInput(input = {}) {
         maxItems: boundedInteger(input.maxItems, DEFAULT_MAX_ITEMS, 1, MAX_ITEMS_LIMIT),
         concurrency: boundedInteger(input.concurrency, DEFAULT_CONCURRENCY, 1, MAX_CONCURRENCY_LIMIT),
         timeout: boundedInteger(input.timeout, DEFAULT_TIMEOUT_MS, 1_000, MAX_TIMEOUT_MS),
-        rateLimit: boundedInteger(input.rateLimit, DEFAULT_REQUESTS_PER_SECOND, 1, 2),
+        rateLimit: boundedInteger(input.rateLimit, DEFAULT_REQUESTS_PER_SECOND, 1, MAX_REQUESTS_PER_SECOND),
         totalRuntime: boundedInteger(input.totalRuntime, DEFAULT_TOTAL_RUNTIME_MS, 30_000, MAX_RUNTIME_MS),
     };
 }
